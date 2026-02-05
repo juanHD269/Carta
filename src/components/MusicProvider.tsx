@@ -1,6 +1,13 @@
 "use client";
 
-import React, { createContext, useContext, useEffect, useMemo, useRef, useState } from "react";
+import React, {
+  createContext,
+  useContext,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 
 type MusicAPI = {
   playSoft: () => void;
@@ -28,6 +35,10 @@ export default function MusicProvider({ children }: { children: React.ReactNode 
   const [volume, setVolumeState] = useState(0.25);
   const [hasStarted, setHasStarted] = useState(false);
 
+  // ✅ IMPORTANTE: desbloqueo para producción (Vercel)
+  const [isUnlocked, setIsUnlocked] = useState(false);
+
+  // listeners del audio + volumen inicial
   useEffect(() => {
     const a = audioRef.current;
     if (!a) return;
@@ -50,6 +61,36 @@ export default function MusicProvider({ children }: { children: React.ReactNode 
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // ✅ Desbloquear audio con la primera interacción real del usuario
+  useEffect(() => {
+    const unlock = async () => {
+      const a = audioRef.current;
+      if (!a) return;
+
+      try {
+        // Intento silencioso (el navegador ahora permite play)
+        a.volume = 0;
+        await a.play();
+        a.pause();
+        a.currentTime = 0;
+        setIsUnlocked(true);
+      } catch {
+        // Si falla, no pasa nada: el próximo click lo intentará igual
+      } finally {
+        window.removeEventListener("pointerdown", unlock);
+        window.removeEventListener("keydown", unlock);
+      }
+    };
+
+    window.addEventListener("pointerdown", unlock, { once: true });
+    window.addEventListener("keydown", unlock, { once: true });
+
+    return () => {
+      window.removeEventListener("pointerdown", unlock);
+      window.removeEventListener("keydown", unlock);
+    };
+  }, []);
+
   const api = useMemo<MusicAPI>(() => {
     const fadeTo = (target: number, ms = 900) => {
       const a = audioRef.current;
@@ -68,19 +109,35 @@ export default function MusicProvider({ children }: { children: React.ReactNode 
       }, stepMs);
     };
 
+    const playInternal = async (soft: boolean) => {
+      const a = audioRef.current;
+      if (!a) return;
+
+      // ✅ si aún no está desbloqueado, no forzamos (evita fallas silenciosas)
+      if (!isUnlocked) return;
+
+      setHasStarted(true);
+
+      if (soft) {
+        a.volume = 0.05;
+        try {
+          await a.play();
+          fadeTo(0.25, 900);
+        } catch {
+          // si falla, el usuario puede darle Play en el controlador
+        }
+      } else {
+        a.volume = Math.max(0, Math.min(1, volume));
+        a.play().catch(() => {});
+      }
+    };
+
     return {
       playSoft: () => {
-        const a = audioRef.current;
-        if (!a) return;
-        setHasStarted(true);
-        a.volume = 0.05;
-        a.play().then(() => fadeTo(0.25, 900)).catch(() => {});
+        void playInternal(true);
       },
       play: () => {
-        const a = audioRef.current;
-        if (!a) return;
-        setHasStarted(true);
-        a.play().catch(() => {});
+        void playInternal(false);
       },
       pause: () => {
         const a = audioRef.current;
@@ -90,22 +147,28 @@ export default function MusicProvider({ children }: { children: React.ReactNode 
       toggle: () => {
         const a = audioRef.current;
         if (!a) return;
+
         setHasStarted(true);
-        if (a.paused) a.play().catch(() => {});
-        else a.pause();
+
+        if (a.paused) {
+          if (!isUnlocked) return;
+          a.play().catch(() => {});
+        } else {
+          a.pause();
+        }
       },
       setVolume: (v: number) => {
         const a = audioRef.current;
-        if (!a) return;
         const next = Math.max(0, Math.min(1, v));
-        a.volume = next;
         setVolumeState(next);
+        if (!a) return;
+        a.volume = next;
       },
       isPlaying,
       volume,
       hasStarted,
     };
-  }, [isPlaying, volume, hasStarted]);
+  }, [isPlaying, volume, hasStarted, isUnlocked]);
 
   return (
     <MusicCtx.Provider value={api}>
