@@ -6,8 +6,8 @@ export type Recuerdo = {
 };
 
 export const recuerdos: Recuerdo[] = [
-  { id: "1", src: "/photos/1.jpeg", caption: "💛" },
-  { id: "2", src: "/photos/2.png", caption: "te extraño" },
+  { id: "1", src: "/photos/1.jpeg" },
+  { id: "2", src: "/photos/2.png" },
   { id: "3", src: "/photos/3.jpeg" },
   { id: "4", src: "/photos/4.jpeg" },
   { id: "5", src: "/photos/5.jpeg" },
